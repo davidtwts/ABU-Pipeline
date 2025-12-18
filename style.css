@@ -1,0 +1,82 @@
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+
+
+
+/* 看板卡片 */
+.kanban-card {
+    background-color: white;
+    padding: 10px;
+    border-radius: 6px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    cursor: grab;
+    transition: all 0.2s;
+    border-left: 5px solid #cbd5e1; /* 預設灰色 */
+    font-size: 14px;
+    position: relative;
+    user-select: none;
+    margin-bottom: 8px;
+}
+.kanban-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+.kanban-card:active { cursor: grabbing; }
+
+/* --- 組別顏色識別 (Group Colors) --- */
+/* 優先權：紅色急件 > 組別顏色 > 完成狀態 */
+
+/* 1. 紅色急件 (最高優先) */
+.kanban-card.priority-red {
+    border: 2px solid #ef4444 !important; /* 強制紅框 */
+    background-color: #fef2f2;
+}
+.kanban-card.priority-red::after {
+    content: "🔥 急件";
+    position: absolute;
+    top: 6px; right: 6px;
+    font-size: 10px; color: #ef4444; font-weight: bold;
+}
+
+/* 2. 組別顏色 (一般任務) */
+.group-ALFS { border-left-color: #8b5cf6; } /* 紫色 */
+.group-HP   { border-left-color: #3b82f6; } /* 藍色 */
+.group-LP   { border-left-color: #06b6d4; } /* 青色 */
+.group-RGB  { border-left-color: #ec4899; } /* 粉紅 */
+.group-APTS { border-left-color: #f97316; } /* 橘色 */
+.group-NONE { border-left-color: #94a3b8; } /* 未分組 */
+
+/* 3. 已完成 (稍微淡化) */
+.kanban-card.status-done { opacity: 0.6; background-color: #f0fdf4; }
+
+
+/* R&D 成員列表 */
+.rd-member-card {
+    padding: 12px;
+    background-color: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+.rd-member-card.drag-over {
+    background-color: #dbeafe;
+    border-color: #3b82f6;
+    transform: scale(1.05);
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}
+
+/* 產能能量條 */
+.capacity-bar-bg { height: 6px; background-color: #e2e8f0; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+.capacity-bar-fill { height: 100%; background-color: #64748b; transition: width 0.3s; }
+/* 能量條顏色跟隨組別，JS 會動態加入 class，例如 bg-purple-500 */
+
+/* 行事曆 */
+.calendar-cell { background-color: white; min-height: 100px; padding: 2px; display: flex; flex-direction: column; gap: 2px; }
+.calendar-date-num { font-size: 12px; font-weight: bold; color: #64748b; text-align: right; padding: 2px 4px; cursor: pointer; }
+.calendar-task { font-size: 10px; padding: 2px 4px; border-radius: 2px; color: white; cursor: pointer; white-space: nowrap; overflow: hidden; }
+/* 行事曆上的顏色 */
+.cal-ALFS { background-color: #8b5cf6; }
+.cal-HP   { background-color: #3b82f6; }
+.cal-LP   { background-color: #06b6d4; }
+.cal-RGB  { background-color: #ec4899; }
+.cal-APTS { background-color: #f97316; }
+.cal-NONE { background-color: #94a3b8; }
+.cal-RED  { background-color: #ef4444 !important; font-weight: bold; }

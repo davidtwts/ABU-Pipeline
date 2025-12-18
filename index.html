@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>團隊看板 (RD/PM)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 h-screen overflow-hidden font-sans flex flex-col">
+
+    <div id="login-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-90 flex justify-center items-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-xl text-center w-80">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">團隊看板</h2>
+            <p class="mb-6 text-gray-600">請使用公司 Google 帳號登入</p>
+            <button id="loginBtn" class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition">Google 登入</button>
+        </div>
+    </div>
+
+    <header class="bg-white shadow px-4 py-3 flex justify-between items-center z-20 shrink-0">
+        <div class="flex items-center gap-4">
+            <h1 class="text-xl font-bold text-gray-800 hidden md:block">專案看板</h1>
+            
+            <div class="flex items-center bg-gray-100 rounded px-2">
+                <i class="fas fa-filter text-gray-400 mr-2"></i>
+                <select id="group-filter" class="bg-transparent border-none text-sm font-bold text-gray-700 focus:ring-0 py-1 outline-none">
+                    <option value="ALL">全部組別 (All Groups)</option>
+                    <option value="ALFS">🟣 ALFS</option>
+                    <option value="HP">🔵 HP</option>
+                    <option value="LP">qc LP</option>
+                    <option value="RGB">🌸 RGB</option>
+                    <option value="APTS">🟠 APTS</option>
+                </select>
+            </div>
+
+            <div class="flex bg-gray-100 rounded p-1 ml-2">
+                <button id="view-kanban-btn" class="px-3 py-1 rounded bg-white shadow text-blue-600 font-bold text-xs transition">看板</button>
+                <button id="view-calendar-btn" class="px-3 py-1 rounded text-gray-500 hover:text-gray-700 text-xs transition">日曆</button>
+            </div>
+
+            <button id="exportBtn" class="pm-only text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 ml-2 hidden"><i class="fas fa-file-csv mr-1"></i>匯出</button>
+        </div>
+
+        <div class="text-sm flex items-center">
+            <span id="role-badge" class="mr-2 text-xs px-2 py-1 rounded font-bold bg-gray-200 text-gray-600">Loading...</span>
+            <span id="user-info" class="mr-4 text-gray-600 font-medium hidden md:inline"></span>
+            <button id="logoutBtn" class="text-red-500 hover:text-red-700 border border-red-200 px-3 py-1 rounded text-xs">登出</button>
+        </div>
+    </header>
+
+    <div id="app-container" style="display:none;" class="flex-1 flex overflow-hidden">
+        
+        <main class="flex-1 bg-gray-100 p-4 overflow-hidden relative">
+            
+            <div id="view-kanban" class="h-full flex space-x-4 overflow-x-auto pb-2">
+                <div class="flex-1 min-w-[300px] bg-gray-50 rounded-lg p-3 flex flex-col border border-gray-200 shadow-sm">
+                    <h3 class="font-bold text-gray-700 mb-2 px-1 border-b pb-2 flex justify-between">To Do <span id="count-todo" class="text-xs bg-gray-200 px-2 rounded-full">0</span></h3>
+                    <div id="todo" class="kanban-column flex-1 space-y-2 overflow-y-auto min-h-[100px] p-1"></div>
+                    <button id="add-todo-btn" class="pm-only mt-2 w-full py-2 border border-dashed border-gray-300 text-gray-500 rounded hover:bg-white transition text-sm hidden">+ 新增任務</button>
+                </div>
+
+                <div class="flex-1 min-w-[300px] bg-blue-50 rounded-lg p-3 flex flex-col border border-blue-100 shadow-sm">
+                    <h3 class="font-bold text-blue-800 mb-2 px-1 border-b border-blue-200 pb-2 flex justify-between">Doing <span id="count-doing" class="text-xs bg-blue-200 px-2 rounded-full">0</span></h3>
+                    <div id="doing" class="kanban-column flex-1 space-y-2 overflow-y-auto min-h-[100px] p-1"></div>
+                    <button id="add-doing-btn" class="pm-only mt-2 w-full py-2 border border-dashed border-blue-300 text-blue-500 rounded hover:bg-white transition text-sm hidden">+ 新增任務</button>
+                </div>
+
+                <div class="flex-1 min-w-[300px] bg-green-50 rounded-lg p-3 flex flex-col border border-green-100 shadow-sm">
+                    <h3 class="font-bold text-green-800 mb-2 px-1 border-b border-green-200 pb-2 flex justify-between">Done <span id="count-done" class="text-xs bg-green-200 px-2 rounded-full">0</span></h3>
+                    <div id="done" class="kanban-column flex-1 space-y-2 overflow-y-auto min-h-[100px] p-1"></div>
+                    <button id="add-done-btn" class="pm-only mt-2 w-full py-2 border border-dashed border-green-300 text-green-500 rounded hover:bg-white transition text-sm hidden">+ 新增任務</button>
+                </div>
+            </div>
+
+            <div id="view-calendar" class="hidden h-full flex flex-col bg-white rounded-lg shadow overflow-hidden">
+                <div class="p-4 border-b flex justify-between items-center bg-gray-50">
+                    <h2 id="calendar-month-title" class="text-lg font-bold text-gray-800"></h2>
+                    <div class="space-x-2">
+                        <button id="prev-month-btn" class="px-3 py-1 bg-white border rounded hover:bg-gray-100"><i class="fas fa-chevron-left"></i></button>
+                        <button id="today-btn" class="px-3 py-1 bg-blue-100 text-blue-700 border border-blue-200 rounded hover:bg-blue-200">今天</button>
+                        <button id="next-month-btn" class="px-3 py-1 bg-white border rounded hover:bg-gray-100"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-7 bg-gray-200 gap-px flex-1 overflow-y-auto" id="calendar-grid"></div>
+            </div>
+
+        </main>
+
+        <aside class="w-64 bg-white border-l shadow-lg flex flex-col shrink-0 z-30">
+            <div class="p-4 bg-gray-50 border-b">
+                <h3 class="font-bold text-gray-700"><i class="fas fa-users mr-2"></i>研發資源池</h3>
+                <div class="flex justify-between items-center mt-2 text-xs text-gray-500">
+                    <span>本日產能狀況</span>
+                    <span id="current-date-display" class="font-bold"></span>
+                </div>
+            </div>
+            
+            <div id="rd-list" class="flex-1 overflow-y-auto p-3 space-y-3">
+                </div>
+
+            <div class="pm-only p-3 border-t bg-gray-50 hidden">
+                <div class="flex flex-col gap-2">
+                    <input type="text" id="new-rd-name" placeholder="姓名..." class="w-full text-xs border rounded px-2 py-1">
+                    <select id="new-rd-group" class="w-full text-xs border rounded px-2 py-1">
+                        <option value="ALFS">ALFS</option>
+                        <option value="HP">HP</option>
+                        <option value="LP">LP</option>
+                        <option value="RGB">RGB</option>
+                        <option value="APTS">APTS</option>
+                    </select>
+                    <button id="add-rd-btn" class="w-full bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700">新增成員</button>
+                </div>
+            </div>
+        </aside>
+
+    </div>
+
+    <div id="task-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex justify-center items-center z-50">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border-t-8 border-blue-500" id="modal-content">
+            <div class="p-6">
+                <div class="flex justify-between items-center border-b pb-2 mb-4">
+                    <h3 id="modal-title" class="text-xl font-bold text-gray-800">任務詳情</h3>
+                    <div class="flex gap-2">
+                        <select id="inp-group" class="border border-gray-300 rounded px-2 py-1 text-sm">
+                            <option value="ALFS">🟣 ALFS</option>
+                            <option value="HP">🔵 HP</option>
+                            <option value="LP">qc LP</option>
+                            <option value="RGB">🌸 RGB</option>
+                            <option value="APTS">🟠 APTS</option>
+                        </select>
+                        <select id="inp-priority" class="border border-gray-300 rounded px-2 py-1 text-sm font-bold">
+                            <option value="normal">一般任務</option>
+                            <option value="red">🔴 急件 (插單)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <form id="task-form" class="grid grid-cols-2 gap-4">
+                    <input type="hidden" id="task-id">
+                    <input type="hidden" id="task-status">
+
+                    <div class="col-span-1 bg-blue-50 p-2 rounded border border-blue-100">
+                        <label class="block text-xs font-bold text-blue-800">預估工時 (hr)</label>
+                        <input type="number" id="inp-estHours" class="w-full border p-1 rounded mt-1 font-bold text-blue-900" min="0.5" step="0.5" value="1">
+                    </div>
+                    <div class="col-span-1 bg-yellow-50 p-2 rounded border border-yellow-100">
+                        <label class="block text-xs font-bold text-yellow-800">開始/預計日期</label>
+                        <input type="date" id="inp-submitDate" class="w-full border p-1 rounded mt-1" required>
+                        <div class="flex items-center mt-1">
+                            <input type="checkbox" id="inp-isLocked" class="mr-1">
+                            <label for="inp-isLocked" class="text-[10px] text-yellow-700 font-bold">Hard Point</label>
+                        </div>
+                    </div>
+
+                    <div class="col-span-1"><label class="text-xs font-bold text-gray-500">品名 (Product)</label><input type="text" id="inp-product" class="w-full border p-2 rounded" required></div>
+                    <div class="col-span-1"><label class="text-xs font-bold text-gray-500">BO 單號</label><input type="text" id="inp-bo" class="w-full border p-2 rounded"></div>
+                    <div class="col-span-1"><label class="text-xs font-bold text-gray-500">NBO 單號</label><input type="text" id="inp-nbo" class="w-full border p-2 rounded"></div>
+                    <div class="col-span-1"><label class="text-xs font-bold text-gray-500">DR/SP 單號</label><input type="text" id="inp-drsp" class="w-full border p-2 rounded"></div>
+                    
+                    <div class="col-span-2"><label class="text-xs font-bold text-gray-500">需求內容</label><textarea id="inp-requirement" rows="3" class="w-full border p-2 rounded"></textarea></div>
+                    
+                    <div class="col-span-1"><label class="text-xs font-bold text-gray-500">T1</label><input type="text" id="inp-t1" class="w-full border p-2 rounded"></div>
+                    <div class="col-span-1"><label class="text-xs font-bold text-gray-500">OEM</label><input type="text" id="inp-oem" class="w-full border p-2 rounded"></div>
+                    <div class="col-span-1"><label class="text-xs font-bold text-gray-500">開立日期</label><input type="date" id="inp-openDate" class="w-full border p-2 rounded"></div>
+                    
+                    <div class="col-span-1">
+                        <label class="text-xs font-bold text-gray-500">指派給 (Assignee)</label>
+                        <input type="text" id="inp-assignee" class="w-full border p-2 rounded bg-gray-100" readonly placeholder="請用拖曳方式指派">
+                    </div>
+                    <div class="col-span-2"><label class="text-xs font-bold text-gray-500">備註</label><input type="text" id="inp-note" class="w-full border p-2 rounded"></div>
+                </form>
+
+                <div class="mt-6 flex justify-end gap-3 pm-only hidden">
+                    <button id="cancel-btn" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">取消</button>
+                    <button id="delete-btn" class="hidden text-red-500 hover:bg-red-50 px-4 py-2 rounded border border-red-200">刪除</button>
+                    <button id="save-task-btn" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 shadow">儲存排程</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="member-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex justify-center items-center z-50">
+        <div class="bg-white rounded-lg shadow-2xl w-80 border-t-8 border-purple-500">
+            <div class="p-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">編輯成員資料</h3>
+                
+                <input type="hidden" id="edit-member-id">
+
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-gray-500 mb-1">姓名</label>
+                    <input type="text" id="edit-member-name" class="w-full border p-2 rounded text-sm bg-gray-50" readonly>
+                    <p class="text-[10px] text-gray-400 mt-1">* 姓名目前設為不可修改</p>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-xs font-bold text-gray-500 mb-1">所屬組別</label>
+                    <select id="edit-member-group" class="w-full border p-2 rounded text-sm font-bold">
+                        <option value="ALFS">🟣 ALFS</option>
+                        <option value="HP">🔵 HP</option>
+                        <option value="LP">qc LP</option>
+                        <option value="RGB">🌸 RGB</option>
+                        <option value="APTS">🟠 APTS</option>
+                    </select>
+                </div>
+
+                <div class="flex justify-between items-center">
+                    <button id="del-member-btn" class="text-red-500 hover:bg-red-50 px-3 py-1 rounded text-sm border border-red-200">
+                        <i class="fas fa-trash-alt mr-1"></i>刪除
+                    </button>
+                    <div class="flex gap-2">
+                        <button id="cancel-member-btn" class="text-gray-500 hover:bg-gray-100 px-3 py-1 rounded text-sm">取消</button>
+                        <button id="save-member-btn" class="bg-purple-600 text-white px-4 py-1 rounded text-sm hover:bg-purple-700">儲存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="script.js"></script>
+</body>
+</html>
