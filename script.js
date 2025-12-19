@@ -21,19 +21,19 @@ const db = getFirestore(app);
 const PM_EMAILS = [
     "pm@company.com", 
     "boss@company.com",
-    "davidtwts@gmail.com" 
-    "angelwang@everlight.com"
-    "normanhung@everlight.com"
-    "carinachen@everlight.com"
-    "stevenlee@everlight.com"
-    "ailingting@everlight.com"
-    "celialin@everlight.com"
-    "liyangyen@everlight.com"
-    "davidtseng@everlight.com"
-    "brucezhang@everlight.com" 
+    "davidtwts@gmail.com",          // <-- 記得加逗號
+    "angelwang@everlight.com",      // <-- 記得加逗號
+    "normanhung@everlight.com",     // <-- 記得加逗號
+    "carinachen@everlight.com",     // <-- 記得加逗號
+    "stevenlee@everlight.com",      // <-- 記得加逗號
+    "ailingting@everlight.com",     // <-- 記得加逗號
+    "celialin@everlight.com",       // <-- 記得加逗號
+    "liyangjen@everlight.com",      // <-- 記得加逗號
+    "davidtseng@everlight.com",     // <-- 記得加逗號
+    "brucezhang@everlight.com"      // 最後一個可以加也可以不加，但建議加上以防未來新增出錯
 ];
 
-const DAILY_LIMIT = 5; 
+const DAILY_LIMIT = 5;
 
 // 狀態變數
 let currentUserRole = 'rd'; 
