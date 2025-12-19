@@ -18,7 +18,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 
-// ★ 請在此輸入 PM 的 Email
+// ★ 請在此輸入 PM 的 Email (注意大小寫)
 const PM_EMAILS = [
     "pm@company.com", 
     "boss@company.com",
@@ -34,7 +34,7 @@ let allMembers = [];
 let currentCalendarDate = new Date();
 let draggedTaskId = null;
 let currentDayFilter = new Date().toISOString().split('T')[0];
-let currentGroupFilter = "ALL"; 
+let currentGroupFilter = "ALL"; // 預設顯示全部組別
 
 // DOM Elements
 const loginOverlay = document.getElementById("login-overlay");
@@ -57,6 +57,7 @@ onAuthStateChanged(auth, (user) => {
           document.getElementById("role-badge").textContent = "PM (管理者)";
           document.getElementById("role-badge").className = "mr-2 text-xs px-2 py-1 rounded font-bold bg-blue-600 text-white";
           
+          // 強制顯示 PM 專用按鈕
           document.querySelectorAll('.pm-only').forEach(el => {
               el.classList.remove('hidden'); 
               if (el.tagName === 'BUTTON') {
@@ -86,6 +87,8 @@ onAuthStateChanged(auth, (user) => {
       
       document.getElementById("user-info").textContent = user.displayName;
       document.getElementById("current-date-display").textContent = currentDayFilter;
+      
+      // 這裡呼叫函式，下面必須有定義
       loadMembers();
       listenToTasks();
       renderCalendar();
@@ -225,9 +228,24 @@ function createKanbanCard(task) {
     return card;
 }
 
-// --- 6. R&D 列表渲染 (正確版) ---
+// --- 6. R&D 成員載入與渲染 (包含遺失的 loadMembers) ---
+
+// ★ 這裡就是之前漏掉的 function ★
+function loadMembers() {
+    const q = query(collection(db, "members"), orderBy("name"));
+    onSnapshot(q, (snapshot) => {
+        allMembers = [];
+        snapshot.forEach(doc => {
+            allMembers.push({ id: doc.id, ...doc.data() });
+        });
+        // 載入完畢後，立刻渲染列表
+        renderRDList();
+    });
+}
+
 function renderRDList() {
     const rdListDiv = document.getElementById("rd-list");
+    if (!rdListDiv) return;
     rdListDiv.innerHTML = "";
 
     const rdUsage = {};
@@ -242,24 +260,26 @@ function renderRDList() {
     });
 
     const displayedMembers = allMembers.filter(m => {
+        const mGroup = m.group || 'ALFS';
         if (currentGroupFilter === "ALL") return true;
-        return m.group === currentGroupFilter;
+        return mGroup === currentGroupFilter;
     });
 
     displayedMembers.forEach(member => {
         const usedHours = rdUsage[member.name] || 0;
         const percentage = Math.min((usedHours / DAILY_LIMIT) * 100, 100);
+        const memberGroup = member.group || 'ALFS'; 
         
         let barClass = "capacity-bar-fill";
         if (usedHours >= DAILY_LIMIT) barClass += " warning"; 
         if (usedHours > DAILY_LIMIT) barClass += " danger";   
 
         let barColor = "#64748b"; 
-        if (member.group === 'ALFS') barColor = "#8b5cf6";
-        if (member.group === 'HP')   barColor = "#3b82f6";
-        if (member.group === 'LP')   barColor = "#06b6d4";
-        if (member.group === 'RGB')  barColor = "#ec4899";
-        if (member.group === 'APTS') barColor = "#f97316";
+        if (memberGroup === 'ALFS') barColor = "#8b5cf6";
+        if (memberGroup === 'HP')   barColor = "#3b82f6";
+        if (memberGroup === 'LP')   barColor = "#06b6d4";
+        if (memberGroup === 'RGB')  barColor = "#ec4899";
+        if (memberGroup === 'APTS') barColor = "#f97316";
 
         const div = document.createElement("div");
         div.className = "rd-member-card flex-col items-start relative group hover:shadow-md"; 
@@ -279,11 +299,11 @@ function renderRDList() {
             <div class="flex justify-between w-full items-center">
                 <div class="flex items-center gap-2">
                     <div class="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-[10px]" style="background-color: ${barColor}">
-                        ${(member.group || 'U').substring(0,1)}
+                        ${memberGroup.substring(0,1)}
                     </div>
                     <div class="font-medium text-gray-700 text-sm">
                         ${member.name} 
-                        <span class="text-[9px] text-gray-400">(${member.group})</span>
+                        <span class="text-[9px] text-gray-400">(${memberGroup})</span>
                     </div>
                 </div>
                 <div class="text-xs font-bold ${usedHours > DAILY_LIMIT ? 'text-red-500' : 'text-gray-500'}">
@@ -300,7 +320,7 @@ function renderRDList() {
             if (editBtn) {
                 editBtn.addEventListener('click', (e) => {
                     e.stopPropagation(); 
-                    openMemberModal(member);
+                    openMemberModal({ ...member, group: memberGroup }); 
                 });
             }
 
@@ -441,11 +461,14 @@ document.getElementById("add-done-btn").addEventListener("click", () => openModa
 
 // 新增 RD 成員 (含組別)
 document.getElementById("add-rd-btn").addEventListener("click", async () => {
-    const name = document.getElementById("new-rd-name").value.trim();
-    const group = document.getElementById("new-rd-group").value;
+    const nameInput = document.getElementById("new-rd-name");
+    const groupInput = document.getElementById("new-rd-group");
+    const name = nameInput.value.trim();
+    const group = groupInput.value;
+
     if(name) { 
         await addDoc(collection(db, "members"), { name, group }); 
-        document.getElementById("new-rd-name").value = ""; 
+        nameInput.value = ""; 
     }
 });
 
