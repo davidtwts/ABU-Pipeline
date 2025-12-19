@@ -17,23 +17,23 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// ★ 請在此輸入 PM 的 Email (注意大小寫)
+// ★ PM 名單 (已修正逗號與格式)
 const PM_EMAILS = [
     "pm@company.com", 
     "boss@company.com",
-    "davidtwts@gmail.com",          // <-- 記得加逗號
-    "angelwang@everlight.com",      // <-- 記得加逗號
-    "normanhung@everlight.com",     // <-- 記得加逗號
-    "carinachen@everlight.com",     // <-- 記得加逗號
-    "stevenlee@everlight.com",      // <-- 記得加逗號
-    "ailingting@everlight.com",     // <-- 記得加逗號
-    "celialin@everlight.com",       // <-- 記得加逗號
-    "liyangjen@everlight.com",      // <-- 記得加逗號
-    "davidtseng@everlight.com",     // <-- 記得加逗號
-    "brucezhang@everlight.com"      // 最後一個可以加也可以不加，但建議加上以防未來新增出錯
+    "davidtwts@gmail.com", 
+    "angelwang@everlight.com",
+    "normanhung@everlight.com",
+    "carinachen@everlight.com",
+    "stevenlee@everlight.com",
+    "ailingting@everlight.com",
+    "celialin@everlight.com",
+    "liyangjen@everlight.com",
+    "davidtseng@everlight.com",
+    "brucezhang@everlight.com" 
 ];
 
-const DAILY_LIMIT = 5;
+const DAILY_LIMIT = 5; 
 
 // 狀態變數
 let currentUserRole = 'rd'; 
@@ -57,8 +57,12 @@ const groupFilterSelect = document.getElementById("group-filter");
 onAuthStateChanged(auth, (user) => {
   if (user) {
       console.log("目前登入者:", user.email);
-      const userEmail = user.email.trim(); 
-      const isPM = PM_EMAILS.includes(userEmail);
+      
+      // ★ 關鍵修正：全部轉成小寫 (toLowerCase) 並去除前後空白 (trim)
+      const userEmail = user.email.trim().toLowerCase(); 
+      
+      // 比對清單時，也把清單裡的 Email 轉小寫來比對
+      const isPM = PM_EMAILS.some(email => email.trim().toLowerCase() === userEmail);
 
       if (isPM) {
           currentUserRole = 'pm';
@@ -93,7 +97,7 @@ onAuthStateChanged(auth, (user) => {
       loginOverlay.classList.add("hidden");
       appContainer.style.display = "flex";
       
-      document.getElementById("user-info").textContent = user.displayName || user.email; // 沒名字就顯示 Email
+      document.getElementById("user-info").textContent = user.displayName || user.email;
       document.getElementById("current-date-display").textContent = currentDayFilter;
       
       loadMembers();
@@ -105,7 +109,7 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 
-// --- 修改：改為 Email/Password 登入 ---
+// --- Email/Password 登入監聽 ---
 document.getElementById("loginBtn").addEventListener("click", async () => {
     const email = document.getElementById("login-email").value.trim();
     const password = document.getElementById("login-password").value;
@@ -610,4 +614,40 @@ document.getElementById("del-member-btn").addEventListener("click", async () => 
             alert("刪除失敗：" + e.message);
         }
     }
+});
+
+// --- 10. 看板欄位拖曳功能 (讓卡片可以在 ToDo/Doing/Done 之間移動) ---
+const columns = ["todo", "doing", "done"];
+
+columns.forEach(colId => {
+    const column = document.getElementById(colId);
+    
+    // 當卡片拖曳經過欄位上方時
+    column.addEventListener("dragover", (e) => {
+        e.preventDefault(); // 必須允許放下
+        column.classList.add("bg-gray-200"); // 視覺回饋：變深色
+    });
+
+    // 當卡片離開欄位時
+    column.addEventListener("dragleave", () => {
+        column.classList.remove("bg-gray-200"); // 恢復顏色
+    });
+
+    // 當卡片放下 (Drop) 時
+    column.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        column.classList.remove("bg-gray-200");
+        
+        // 只有 PM 且有拖曳目標時才執行
+        if (currentUserRole === 'pm' && draggedTaskId) {
+            try {
+                await updateDoc(doc(db, "tasks", draggedTaskId), {
+                    status: colId, // 將狀態更新為該欄位的 ID (todo, doing, done)
+                    lastUpdated: new Date().toISOString()
+                });
+            } catch (e) {
+                alert("移動失敗: " + e.message);
+            }
+        }
+    });
 });
