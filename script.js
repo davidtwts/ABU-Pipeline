@@ -17,7 +17,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// ★ PM 名單 (已修正逗號與格式)
+// ★ PM 名單 (請確認這裡有你的 Email)
 const PM_EMAILS = [
     "pm@company.com", 
     "boss@company.com",
@@ -42,7 +42,7 @@ let allMembers = [];
 let currentCalendarDate = new Date();
 let draggedTaskId = null;
 let currentDayFilter = new Date().toISOString().split('T')[0];
-let currentGroupFilter = "ALL"; // 預設顯示全部組別
+let currentGroupFilter = "ALL"; 
 
 // DOM Elements
 const loginOverlay = document.getElementById("login-overlay");
@@ -58,10 +58,7 @@ onAuthStateChanged(auth, (user) => {
   if (user) {
       console.log("目前登入者:", user.email);
       
-      // ★ 關鍵修正：全部轉成小寫 (toLowerCase) 並去除前後空白 (trim)
       const userEmail = user.email.trim().toLowerCase(); 
-      
-      // 比對清單時，也把清單裡的 Email 轉小寫來比對
       const isPM = PM_EMAILS.some(email => email.trim().toLowerCase() === userEmail);
 
       if (isPM) {
@@ -69,7 +66,6 @@ onAuthStateChanged(auth, (user) => {
           document.getElementById("role-badge").textContent = "PM (管理者)";
           document.getElementById("role-badge").className = "mr-2 text-xs px-2 py-1 rounded font-bold bg-blue-600 text-white";
           
-          // 強制顯示 PM 專用按鈕
           document.querySelectorAll('.pm-only').forEach(el => {
               el.classList.remove('hidden'); 
               if (el.tagName === 'BUTTON') {
@@ -109,7 +105,7 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 
-// --- Email/Password 登入監聽 ---
+// --- Email/Password 登入 ---
 document.getElementById("loginBtn").addEventListener("click", async () => {
     const email = document.getElementById("login-email").value.trim();
     const password = document.getElementById("login-password").value;
@@ -224,29 +220,36 @@ function createKanbanCard(task) {
     if (task.priority === 'red') card.classList.add('priority-red');
     if (isOverdue && task.priority !== 'red') card.style.border = "2px solid #f59e0b"; 
 
+    // ★ 修正：確保只有 PM 可以拖曳
     if (currentUserRole === 'pm') {
         card.draggable = true;
+        card.style.cursor = "grab"; // 顯示抓取手勢
+        
         card.addEventListener("dragstart", (e) => {
             draggedTaskId = task.id;
             card.style.opacity = "0.5";
             e.dataTransfer.effectAllowed = "move";
+            // ★ 修正：加入 setData 以支援 Firefox 等瀏覽器
+            e.dataTransfer.setData("text/plain", task.id);
         });
+        
         card.addEventListener("dragend", () => {
             draggedTaskId = null;
             card.style.opacity = "1";
         });
+        
         card.addEventListener("click", () => openModal(task.status, task));
     } else {
-        card.style.cursor = "default";
+        card.style.cursor = "default"; // RD 顯示一般游標
     }
 
     card.innerHTML = `
-        <div class="flex justify-between items-start mb-1">
+        <div class="flex justify-between items-start mb-1 pointer-events-none">
             <span class="font-bold text-gray-800 text-sm">${task.product || '未命名'}</span>
              <span class="text-[9px] px-1 rounded bg-gray-100 text-gray-500">${task.group || '-'}</span>
         </div>
-        <div class="text-[11px] text-gray-500 mb-2">${task.bo || ''}</div>
-        <div class="flex justify-between items-center text-[10px]">
+        <div class="text-[11px] text-gray-500 mb-2 pointer-events-none">${task.bo || ''}</div>
+        <div class="flex justify-between items-center text-[10px] pointer-events-none">
             <span class="${isOverdue ? 'text-red-600 font-bold' : 'text-gray-500'}">
                 <i class="far fa-calendar-alt"></i> ${task.submitDate}
             </span>
@@ -324,7 +327,7 @@ function renderRDList() {
 
         div.innerHTML = `
             ${editBtnHtml}
-            <div class="flex justify-between w-full items-center">
+            <div class="flex justify-between w-full items-center pointer-events-none">
                 <div class="flex items-center gap-2">
                     <div class="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-[10px]" style="background-color: ${barColor}">
                         ${memberGroup.substring(0,1)}
@@ -338,7 +341,7 @@ function renderRDList() {
                     ${usedHours} / ${DAILY_LIMIT} h
                 </div>
             </div>
-            <div class="w-full capacity-bar-bg">
+            <div class="w-full capacity-bar-bg pointer-events-none">
                 <div class="${barClass}" style="width: ${percentage}%; background-color: ${usedHours > DAILY_LIMIT ? '#ef4444' : barColor};"></div>
             </div>
         `;
@@ -352,7 +355,11 @@ function renderRDList() {
                 });
             }
 
-            div.addEventListener("dragover", (e) => { e.preventDefault(); div.classList.add("drag-over"); });
+            div.addEventListener("dragover", (e) => { 
+                e.preventDefault(); 
+                e.dataTransfer.dropEffect = "copy"; // 視覺提示
+                div.classList.add("drag-over"); 
+            });
             div.addEventListener("dragleave", () => div.classList.remove("drag-over"));
             div.addEventListener("drop", async (e) => {
                 e.preventDefault();
@@ -625,6 +632,7 @@ columns.forEach(colId => {
     // 當卡片拖曳經過欄位上方時
     column.addEventListener("dragover", (e) => {
         e.preventDefault(); // 必須允許放下
+        e.dataTransfer.dropEffect = "move"; // 視覺提示
         column.classList.add("bg-gray-200"); // 視覺回饋：變深色
     });
 
