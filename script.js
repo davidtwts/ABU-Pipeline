@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // --- 1. 設定與權限 ---
@@ -16,7 +16,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const provider = new GoogleAuthProvider();
 
 // ★ 請在此輸入 PM 的 Email (注意大小寫)
 const PM_EMAILS = [
@@ -85,10 +84,9 @@ onAuthStateChanged(auth, (user) => {
       loginOverlay.classList.add("hidden");
       appContainer.style.display = "flex";
       
-      document.getElementById("user-info").textContent = user.displayName;
+      document.getElementById("user-info").textContent = user.displayName || user.email; // 沒名字就顯示 Email
       document.getElementById("current-date-display").textContent = currentDayFilter;
       
-      // 這裡呼叫函式，下面必須有定義
       loadMembers();
       listenToTasks();
       renderCalendar();
@@ -98,7 +96,27 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 
-document.getElementById("loginBtn").addEventListener("click", () => signInWithPopup(auth, provider));
+// --- 修改：改為 Email/Password 登入 ---
+document.getElementById("loginBtn").addEventListener("click", async () => {
+    const email = document.getElementById("login-email").value.trim();
+    const password = document.getElementById("login-password").value;
+    const errorMsg = document.getElementById("login-error");
+
+    if (!email || !password) {
+        alert("請輸入帳號與密碼");
+        return;
+    }
+
+    try {
+        await signInWithEmailAndPassword(auth, email, password);
+        errorMsg.classList.add("hidden");
+    } catch (error) {
+        console.error("登入失敗:", error.code, error.message);
+        errorMsg.textContent = "登入失敗：帳號不存在或密碼錯誤";
+        errorMsg.classList.remove("hidden");
+    }
+});
+
 document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
 
 // --- 3. 篩選邏輯 ---
@@ -228,9 +246,7 @@ function createKanbanCard(task) {
     return card;
 }
 
-// --- 6. R&D 成員載入與渲染 (包含遺失的 loadMembers) ---
-
-// ★ 這裡就是之前漏掉的 function ★
+// --- 6. R&D 成員載入與渲染 ---
 function loadMembers() {
     const q = query(collection(db, "members"), orderBy("name"));
     onSnapshot(q, (snapshot) => {
@@ -238,7 +254,6 @@ function loadMembers() {
         snapshot.forEach(doc => {
             allMembers.push({ id: doc.id, ...doc.data() });
         });
-        // 載入完畢後，立刻渲染列表
         renderRDList();
     });
 }
@@ -460,17 +475,20 @@ document.getElementById("add-doing-btn").addEventListener("click", () => openMod
 document.getElementById("add-done-btn").addEventListener("click", () => openModal("done"));
 
 // 新增 RD 成員 (含組別)
-document.getElementById("add-rd-btn").addEventListener("click", async () => {
-    const nameInput = document.getElementById("new-rd-name");
-    const groupInput = document.getElementById("new-rd-group");
-    const name = nameInput.value.trim();
-    const group = groupInput.value;
+const addRdBtn = document.getElementById("add-rd-btn");
+if (addRdBtn) {
+    addRdBtn.addEventListener("click", async () => {
+        const nameInput = document.getElementById("new-rd-name");
+        const groupInput = document.getElementById("new-rd-group");
+        const name = nameInput.value.trim();
+        const group = groupInput.value;
 
-    if(name) { 
-        await addDoc(collection(db, "members"), { name, group }); 
-        nameInput.value = ""; 
-    }
-});
+        if(name) { 
+            await addDoc(collection(db, "members"), { name, group }); 
+            nameInput.value = ""; 
+        }
+    });
+}
 
 // --- 8. 行事曆 ---
 function renderCalendar() {
