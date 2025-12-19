@@ -22,6 +22,15 @@ const PM_EMAILS = [
     "pm@company.com", 
     "boss@company.com",
     "davidtwts@gmail.com" 
+    "angelwang@everlight.com"
+    "normanhung@everlight.com"
+    "carinachen@everlight.com"
+    "stevenlee@everlight.com"
+    "ailingting@everlight.com"
+    "celialin@everlight.com"
+    "liyangyen@everlight.com"
+    "davidtseng@everlight.com"
+    "brucezhang@everlight.com" 
 ];
 
 const DAILY_LIMIT = 5; 
