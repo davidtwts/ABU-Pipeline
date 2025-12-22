@@ -52,6 +52,7 @@ const taskForm = document.getElementById("task-form");
 const viewKanban = document.getElementById("view-kanban");
 const viewCalendar = document.getElementById("view-calendar");
 const groupFilterSelect = document.getElementById("group-filter");
+const rdListContainer = document.getElementById("rd-list"); // 取得 RD 列表容器
 
 // --- 2. 驗證與權限邏輯 ---
 onAuthStateChanged(auth, (user) => {
@@ -143,7 +144,6 @@ function allocateBookings(startDateStr, totalHours, priority, targetAssignee = n
     let occupied = {}; 
 
     allTasksData.forEach(t => {
-        // ★ 關鍵修正：只計算目標 RD 的產能，避免被其他人的任務卡住
         if (targetAssignee && t.assignee !== targetAssignee) return;
 
         if(t.bookings) {
@@ -229,7 +229,7 @@ function createKanbanCard(task) {
         card.addEventListener("dragstart", (e) => {
             draggedTaskId = task.id;
             card.style.opacity = "0.5";
-            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.effectAllowed = "copy"; // 設定為 copy
             e.dataTransfer.setData("text/plain", task.id);
         });
         
@@ -243,14 +243,14 @@ function createKanbanCard(task) {
         card.style.cursor = "default";
     }
 
-    // ★ 這裡加了 pointer-events-none 確保拖曳卡片內容不會干擾
+    // 移除 pointer-events-none，改用事件委派處理拖曳
     card.innerHTML = `
-        <div class="flex justify-between items-start mb-1 pointer-events-none">
+        <div class="flex justify-between items-start mb-1">
             <span class="font-bold text-gray-800 text-sm">${task.product || '未命名'}</span>
              <span class="text-[9px] px-1 rounded bg-gray-100 text-gray-500">${task.group || '-'}</span>
         </div>
-        <div class="text-[11px] text-gray-500 mb-2 pointer-events-none">${task.bo || ''}</div>
-        <div class="flex justify-between items-center text-[10px] pointer-events-none">
+        <div class="text-[11px] text-gray-500 mb-2">${task.bo || ''}</div>
+        <div class="flex justify-between items-center text-[10px]">
             <span class="${isOverdue ? 'text-red-600 font-bold' : 'text-gray-500'}">
                 <i class="far fa-calendar-alt"></i> ${task.submitDate}
             </span>
@@ -263,7 +263,7 @@ function createKanbanCard(task) {
     return card;
 }
 
-// --- 6. R&D 成員載入與渲染 (★ 關鍵修正區域) ---
+// --- 6. R&D 成員載入與渲染 (使用事件委派) ---
 function loadMembers() {
     const q = query(collection(db, "members"), orderBy("name"));
     onSnapshot(q, (snapshot) => {
@@ -314,6 +314,7 @@ function renderRDList() {
         if (memberGroup === 'APTS') barColor = "#f97316";
 
         const div = document.createElement("div");
+        // 加入 rd-member-card class
         div.className = "rd-member-card flex-col items-start relative group hover:shadow-md"; 
         div.dataset.name = member.name;
         
@@ -326,10 +327,10 @@ function renderRDList() {
             `;
         }
 
-        // ★★★ 關鍵修正：加上 style="pointer-events: none;" 強制讓滑鼠穿透文字 ★★★
+        // 移除 pointer-events-none，因為我們現在使用外層委派
         div.innerHTML = `
             ${editBtnHtml}
-            <div class="flex justify-between w-full items-center" style="pointer-events: none;">
+            <div class="flex justify-between w-full items-center pointer-events-none">
                 <div class="flex items-center gap-2">
                     <div class="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-[10px]" style="background-color: ${barColor}">
                         ${memberGroup.substring(0,1)}
@@ -343,7 +344,7 @@ function renderRDList() {
                     ${usedHours} / ${DAILY_LIMIT} h
                 </div>
             </div>
-            <div class="w-full capacity-bar-bg" style="pointer-events: none;">
+            <div class="w-full capacity-bar-bg pointer-events-none">
                 <div class="${barClass}" style="width: ${percentage}%; background-color: ${usedHours > DAILY_LIMIT ? '#ef4444' : barColor};"></div>
             </div>
         `;
@@ -356,22 +357,41 @@ function renderRDList() {
                     openMemberModal({ ...member, group: memberGroup }); 
                 });
             }
-
-            div.addEventListener("dragover", (e) => { 
-                e.preventDefault(); 
-                e.dataTransfer.dropEffect = "move"; 
-                div.classList.add("drag-over"); 
-            });
-            div.addEventListener("dragleave", () => div.classList.remove("drag-over"));
-            div.addEventListener("drop", async (e) => {
-                e.preventDefault();
-                div.classList.remove("drag-over");
-                if (draggedTaskId) {
-                    await assignTaskToRD(draggedTaskId, member.name);
-                }
-            });
         }
         rdListDiv.appendChild(div);
+    });
+}
+
+// ★★★ 終極修復：全域 RD 列表拖曳委派 (Event Delegation) ★★★
+// 這段程式碼會監聽整個 #rd-list 容器，不管裡面的卡片怎麼變，都能正確感應拖曳
+if (rdListContainer) {
+    rdListContainer.addEventListener("dragover", (e) => {
+        // 尋找事件觸發點最近的 .rd-member-card
+        const card = e.target.closest(".rd-member-card");
+        
+        if (card && currentUserRole === 'pm') {
+            e.preventDefault(); // 絕對必要：允許放下
+            e.dataTransfer.dropEffect = "copy";
+            card.classList.add("drag-over");
+        }
+    });
+
+    rdListContainer.addEventListener("dragleave", (e) => {
+        const card = e.target.closest(".rd-member-card");
+        if (card) {
+            card.classList.remove("drag-over");
+        }
+    });
+
+    rdListContainer.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        const card = e.target.closest(".rd-member-card");
+        
+        if (card && currentUserRole === 'pm' && draggedTaskId) {
+            card.classList.remove("drag-over");
+            const rdName = card.dataset.name;
+            await assignTaskToRD(draggedTaskId, rdName);
+        }
     });
 }
 
@@ -381,8 +401,6 @@ async function assignTaskToRD(taskId, rdName) {
     if (!task) return;
     if (confirm(`指派「${task.product}」給 ${rdName}？\n(排程將從 ${currentDayFilter} 開始計算)`)) {
         const startDate = currentDayFilter; 
-        
-        // ★ 確保傳入 rdName，解決時數沒加上去的問題
         const newBookings = allocateBookings(startDate, task.estHours || 1, task.priority, rdName);
         
         await updateDoc(doc(db, "tasks", taskId), {
@@ -515,119 +533,6 @@ if (addRdBtn) {
         }
     });
 }
-
-// --- 8. 行事曆 ---
-function renderCalendar() {
-    const grid = document.getElementById("calendar-grid");
-    grid.innerHTML = "";
-    const year = currentCalendarDate.getFullYear();
-    const month = currentCalendarDate.getMonth();
-    document.getElementById("calendar-month-title").textContent = `${year}年 ${month + 1}月`;
-
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-    for (let i = 0; i < firstDay; i++) {
-        const blank = document.createElement("div");
-        blank.className = "bg-gray-50";
-        grid.appendChild(blank);
-    }
-
-    for (let day = 1; day <= daysInMonth; day++) {
-        const cell = document.createElement("div");
-        cell.className = "calendar-cell";
-        const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-        
-        const numDiv = document.createElement("div");
-        numDiv.className = "calendar-date-num";
-        numDiv.textContent = day;
-        numDiv.onclick = () => { 
-            currentDayFilter = dateStr; 
-            document.getElementById("current-date-display").textContent = dateStr;
-            renderRDList(); 
-        };
-        cell.appendChild(numDiv);
-
-        allTasksData.forEach(task => {
-            if (currentGroupFilter !== "ALL" && task.group !== currentGroupFilter) return;
-
-            if (task.bookings) {
-                const booking = task.bookings.find(b => b.date === dateStr);
-                if (booking) {
-                    const taskDiv = document.createElement("div");
-                    taskDiv.className = `calendar-task status-${task.status}`;
-                    
-                    if(task.priority === 'red') {
-                        taskDiv.classList.add('cal-RED');
-                    } else {
-                        taskDiv.classList.add(`cal-${task.group || 'NONE'}`);
-                    }
-
-                    taskDiv.textContent = `${task.product}`;
-                    taskDiv.title = `[${task.group}] ${task.product} (${task.assignee})`;
-                    taskDiv.addEventListener("click", (e) => { e.stopPropagation(); if(currentUserRole === 'pm') openModal(task.status, task); });
-                    cell.appendChild(taskDiv);
-                }
-            }
-        });
-        grid.appendChild(cell);
-    }
-}
-
-document.getElementById("view-kanban-btn").addEventListener("click", () => {
-    viewKanban.classList.remove("hidden"); viewKanban.classList.add("flex");
-    viewCalendar.classList.add("hidden");
-});
-document.getElementById("view-calendar-btn").addEventListener("click", () => {
-    viewKanban.classList.add("hidden"); viewKanban.classList.remove("flex");
-    viewCalendar.classList.remove("hidden");
-    renderCalendar();
-});
-document.getElementById("prev-month-btn").addEventListener("click", () => { currentCalendarDate.setMonth(currentCalendarDate.getMonth()-1); renderCalendar(); });
-document.getElementById("next-month-btn").addEventListener("click", () => { currentCalendarDate.setMonth(currentCalendarDate.getMonth()+1); renderCalendar(); });
-document.getElementById("today-btn").addEventListener("click", () => { currentCalendarDate = new Date(); renderCalendar(); });
-
-// --- 9. 成員編輯視窗邏輯 ---
-const memberModal = document.getElementById("member-modal");
-
-function openMemberModal(member) {
-    memberModal.classList.remove("hidden");
-    document.getElementById("edit-member-id").value = member.id;
-    document.getElementById("edit-member-name").value = member.name;
-    document.getElementById("edit-member-group").value = member.group || "ALFS";
-}
-
-document.getElementById("cancel-member-btn").addEventListener("click", () => {
-    memberModal.classList.add("hidden");
-});
-
-document.getElementById("save-member-btn").addEventListener("click", async () => {
-    const memberId = document.getElementById("edit-member-id").value;
-    const newGroup = document.getElementById("edit-member-group").value;
-
-    try {
-        await updateDoc(doc(db, "members", memberId), {
-            group: newGroup
-        });
-        memberModal.classList.add("hidden");
-    } catch (e) {
-        alert("更新失敗：" + e.message);
-    }
-});
-
-document.getElementById("del-member-btn").addEventListener("click", async () => {
-    const memberId = document.getElementById("edit-member-id").value;
-    const memberName = document.getElementById("edit-member-name").value;
-
-    if (confirm(`警告：確定要刪除成員「${memberName}」嗎？\n\n注意：這不會刪除他已經被指派的任務紀錄，但之後將無法指派新任務給他。`)) {
-        try {
-            await deleteDoc(doc(db, "members", memberId));
-            memberModal.classList.add("hidden");
-        } catch (e) {
-            alert("刪除失敗：" + e.message);
-        }
-    }
-});
 
 // --- 10. 看板欄位拖曳功能 (讓卡片可以在 ToDo/Doing/Done 之間移動) ---
 const columns = ["todo", "doing", "done"];
