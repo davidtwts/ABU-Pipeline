@@ -17,7 +17,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// ★ PM 名單 (請確認這裡有你的 Email)
+// ★ PM 名單
 const PM_EMAILS = [
     "pm@company.com", 
     "boss@company.com",
@@ -57,7 +57,6 @@ const groupFilterSelect = document.getElementById("group-filter");
 onAuthStateChanged(auth, (user) => {
   if (user) {
       console.log("目前登入者:", user.email);
-      
       const userEmail = user.email.trim().toLowerCase(); 
       const isPM = PM_EMAILS.some(email => email.trim().toLowerCase() === userEmail);
 
@@ -136,14 +135,18 @@ groupFilterSelect.addEventListener("change", (e) => {
 });
 
 
-// --- 4. 瀑布流排程演算法 ---
-function allocateBookings(startDateStr, totalHours, priority) {
+// --- 4. 瀑布流排程演算法 (修正版：只計算特定人員的產能) ---
+function allocateBookings(startDateStr, totalHours, priority, targetAssignee = null) {
     let bookings = [];
     let remainingHours = parseFloat(totalHours);
     let checkDate = new Date(startDateStr);
     let occupied = {}; 
 
+    // 計算已佔用的時數
     allTasksData.forEach(t => {
+        // ★ 關鍵修正：如果指定了人員，只計算該人員的任務
+        if (targetAssignee && t.assignee !== targetAssignee) return;
+
         if(t.bookings) {
             t.bookings.forEach(b => {
                 if(!occupied[b.date]) occupied[b.date] = 0;
@@ -220,16 +223,14 @@ function createKanbanCard(task) {
     if (task.priority === 'red') card.classList.add('priority-red');
     if (isOverdue && task.priority !== 'red') card.style.border = "2px solid #f59e0b"; 
 
-    // ★ 修正：確保只有 PM 可以拖曳
     if (currentUserRole === 'pm') {
         card.draggable = true;
-        card.style.cursor = "grab"; // 顯示抓取手勢
+        card.style.cursor = "grab";
         
         card.addEventListener("dragstart", (e) => {
             draggedTaskId = task.id;
             card.style.opacity = "0.5";
             e.dataTransfer.effectAllowed = "move";
-            // ★ 修正：加入 setData 以支援 Firefox 等瀏覽器
             e.dataTransfer.setData("text/plain", task.id);
         });
         
@@ -240,7 +241,7 @@ function createKanbanCard(task) {
         
         card.addEventListener("click", () => openModal(task.status, task));
     } else {
-        card.style.cursor = "default"; // RD 顯示一般游標
+        card.style.cursor = "default";
     }
 
     card.innerHTML = `
@@ -357,7 +358,7 @@ function renderRDList() {
 
             div.addEventListener("dragover", (e) => { 
                 e.preventDefault(); 
-                e.dataTransfer.dropEffect = "copy"; // 視覺提示
+                e.dataTransfer.dropEffect = "copy"; 
                 div.classList.add("drag-over"); 
             });
             div.addEventListener("dragleave", () => div.classList.remove("drag-over"));
@@ -373,13 +374,18 @@ function renderRDList() {
     });
 }
 
-// 指派
+// 指派 (修正版：使用目前選擇的日期 currentDayFilter，並傳入 rdName 給排程器)
 async function assignTaskToRD(taskId, rdName) {
     const task = allTasksData.find(t => t.id === taskId);
     if (!task) return;
-    if (confirm(`指派「${task.product}」給 ${rdName}？`)) {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const newBookings = allocateBookings(todayStr, task.estHours || 1, task.priority);
+    if (confirm(`指派「${task.product}」給 ${rdName}？\n(排程將從 ${currentDayFilter} 開始計算)`)) {
+        // ★ 修正：使用 currentDayFilter (目前查看的日期) 而不是 new Date() (今天)
+        // 這樣你在查看明天時，拖曳進去就會排在明天，比較直覺
+        const startDate = currentDayFilter; 
+        
+        // ★ 修正：傳入 rdName 給 allocateBookings，讓它只計算該 RD 的產能
+        const newBookings = allocateBookings(startDate, task.estHours || 1, task.priority, rdName);
+        
         await updateDoc(doc(db, "tasks", taskId), {
             assignee: rdName,
             bookings: newBookings, 
@@ -444,8 +450,10 @@ document.getElementById("save-task-btn").addEventListener("click", async () => {
     const startDate = document.getElementById("inp-submitDate").value; 
     const priority = document.getElementById("inp-priority").value;
     const group = document.getElementById("inp-group").value; 
+    const assignee = document.getElementById("inp-assignee").value; // 取得手動輸入的指派者 (如果有的話)
 
-    const bookings = allocateBookings(startDate, estHours, priority);
+    // ★ 修正：儲存時也傳入 assignee，以正確計算產能
+    const bookings = allocateBookings(startDate, estHours, priority, assignee);
 
     const taskData = {
         status: document.getElementById("task-status").value,
@@ -464,7 +472,7 @@ document.getElementById("save-task-btn").addEventListener("click", async () => {
         requirement: document.getElementById("inp-requirement").value,
         t1: document.getElementById("inp-t1").value,
         oem: document.getElementById("inp-oem").value,
-        assignee: document.getElementById("inp-assignee").value,
+        assignee: assignee,
         note: document.getElementById("inp-note").value,
         lastUpdated: new Date().toISOString()
     };
