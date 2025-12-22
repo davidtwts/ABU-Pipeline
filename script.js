@@ -143,6 +143,7 @@ function allocateBookings(startDateStr, totalHours, priority, targetAssignee = n
     let occupied = {}; 
 
     allTasksData.forEach(t => {
+        // ★ 關鍵修正：只計算目標 RD 的產能，避免被其他人的任務卡住
         if (targetAssignee && t.assignee !== targetAssignee) return;
 
         if(t.bookings) {
@@ -242,6 +243,7 @@ function createKanbanCard(task) {
         card.style.cursor = "default";
     }
 
+    // ★ 這裡加了 pointer-events-none 確保拖曳卡片內容不會干擾
     card.innerHTML = `
         <div class="flex justify-between items-start mb-1 pointer-events-none">
             <span class="font-bold text-gray-800 text-sm">${task.product || '未命名'}</span>
@@ -261,7 +263,7 @@ function createKanbanCard(task) {
     return card;
 }
 
-// --- 6. R&D 成員載入與渲染 (★ 這裡修復了拖曳問題) ---
+// --- 6. R&D 成員載入與渲染 (★ 關鍵修正區域) ---
 function loadMembers() {
     const q = query(collection(db, "members"), orderBy("name"));
     onSnapshot(q, (snapshot) => {
@@ -324,11 +326,10 @@ function renderRDList() {
             `;
         }
 
-        // ★ 關鍵修正：在子元素加入 'pointer-events-none'
-        // 這會讓滑鼠穿透文字，直接觸發外層 div 的 dragover 事件
+        // ★★★ 關鍵修正：加上 style="pointer-events: none;" 強制讓滑鼠穿透文字 ★★★
         div.innerHTML = `
             ${editBtnHtml}
-            <div class="flex justify-between w-full items-center pointer-events-none">
+            <div class="flex justify-between w-full items-center" style="pointer-events: none;">
                 <div class="flex items-center gap-2">
                     <div class="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-[10px]" style="background-color: ${barColor}">
                         ${memberGroup.substring(0,1)}
@@ -342,7 +343,7 @@ function renderRDList() {
                     ${usedHours} / ${DAILY_LIMIT} h
                 </div>
             </div>
-            <div class="w-full capacity-bar-bg pointer-events-none">
+            <div class="w-full capacity-bar-bg" style="pointer-events: none;">
                 <div class="${barClass}" style="width: ${percentage}%; background-color: ${usedHours > DAILY_LIMIT ? '#ef4444' : barColor};"></div>
             </div>
         `;
@@ -356,15 +357,12 @@ function renderRDList() {
                 });
             }
 
-            // ★ 拖曳事件監聽器
             div.addEventListener("dragover", (e) => { 
-                e.preventDefault(); // 這裡最重要，必須防止預設行為才能 Drop
-                e.dataTransfer.dropEffect = "copy"; // 讓滑鼠顯示 + 號
+                e.preventDefault(); 
+                e.dataTransfer.dropEffect = "move"; 
                 div.classList.add("drag-over"); 
             });
-            
             div.addEventListener("dragleave", () => div.classList.remove("drag-over"));
-            
             div.addEventListener("drop", async (e) => {
                 e.preventDefault();
                 div.classList.remove("drag-over");
@@ -383,6 +381,8 @@ async function assignTaskToRD(taskId, rdName) {
     if (!task) return;
     if (confirm(`指派「${task.product}」給 ${rdName}？\n(排程將從 ${currentDayFilter} 開始計算)`)) {
         const startDate = currentDayFilter; 
+        
+        // ★ 確保傳入 rdName，解決時數沒加上去的問題
         const newBookings = allocateBookings(startDate, task.estHours || 1, task.priority, rdName);
         
         await updateDoc(doc(db, "tasks", taskId), {
