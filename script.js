@@ -135,16 +135,14 @@ groupFilterSelect.addEventListener("change", (e) => {
 });
 
 
-// --- 4. 瀑布流排程演算法 (修正版：只計算特定人員的產能) ---
+// --- 4. 瀑布流排程演算法 ---
 function allocateBookings(startDateStr, totalHours, priority, targetAssignee = null) {
     let bookings = [];
     let remainingHours = parseFloat(totalHours);
     let checkDate = new Date(startDateStr);
     let occupied = {}; 
 
-    // 計算已佔用的時數
     allTasksData.forEach(t => {
-        // ★ 關鍵修正：如果指定了人員，只計算該人員的任務
         if (targetAssignee && t.assignee !== targetAssignee) return;
 
         if(t.bookings) {
@@ -263,7 +261,7 @@ function createKanbanCard(task) {
     return card;
 }
 
-// --- 6. R&D 成員載入與渲染 ---
+// --- 6. R&D 成員載入與渲染 (★ 這裡修復了拖曳問題) ---
 function loadMembers() {
     const q = query(collection(db, "members"), orderBy("name"));
     onSnapshot(q, (snapshot) => {
@@ -326,6 +324,8 @@ function renderRDList() {
             `;
         }
 
+        // ★ 關鍵修正：在子元素加入 'pointer-events-none'
+        // 這會讓滑鼠穿透文字，直接觸發外層 div 的 dragover 事件
         div.innerHTML = `
             ${editBtnHtml}
             <div class="flex justify-between w-full items-center pointer-events-none">
@@ -356,12 +356,15 @@ function renderRDList() {
                 });
             }
 
+            // ★ 拖曳事件監聽器
             div.addEventListener("dragover", (e) => { 
-                e.preventDefault(); 
-                e.dataTransfer.dropEffect = "copy"; 
+                e.preventDefault(); // 這裡最重要，必須防止預設行為才能 Drop
+                e.dataTransfer.dropEffect = "copy"; // 讓滑鼠顯示 + 號
                 div.classList.add("drag-over"); 
             });
+            
             div.addEventListener("dragleave", () => div.classList.remove("drag-over"));
+            
             div.addEventListener("drop", async (e) => {
                 e.preventDefault();
                 div.classList.remove("drag-over");
@@ -374,16 +377,12 @@ function renderRDList() {
     });
 }
 
-// 指派 (修正版：使用目前選擇的日期 currentDayFilter，並傳入 rdName 給排程器)
+// 指派
 async function assignTaskToRD(taskId, rdName) {
     const task = allTasksData.find(t => t.id === taskId);
     if (!task) return;
     if (confirm(`指派「${task.product}」給 ${rdName}？\n(排程將從 ${currentDayFilter} 開始計算)`)) {
-        // ★ 修正：使用 currentDayFilter (目前查看的日期) 而不是 new Date() (今天)
-        // 這樣你在查看明天時，拖曳進去就會排在明天，比較直覺
         const startDate = currentDayFilter; 
-        
-        // ★ 修正：傳入 rdName 給 allocateBookings，讓它只計算該 RD 的產能
         const newBookings = allocateBookings(startDate, task.estHours || 1, task.priority, rdName);
         
         await updateDoc(doc(db, "tasks", taskId), {
@@ -450,9 +449,8 @@ document.getElementById("save-task-btn").addEventListener("click", async () => {
     const startDate = document.getElementById("inp-submitDate").value; 
     const priority = document.getElementById("inp-priority").value;
     const group = document.getElementById("inp-group").value; 
-    const assignee = document.getElementById("inp-assignee").value; // 取得手動輸入的指派者 (如果有的話)
+    const assignee = document.getElementById("inp-assignee").value;
 
-    // ★ 修正：儲存時也傳入 assignee，以正確計算產能
     const bookings = allocateBookings(startDate, estHours, priority, assignee);
 
     const taskData = {
