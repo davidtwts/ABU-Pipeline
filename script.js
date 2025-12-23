@@ -144,10 +144,8 @@ function allocateBookings(startDateStr, totalHours, priority, targetAssignee = n
     let occupied = {}; 
 
     allTasksData.forEach(t => {
-        // 只計算目標 RD 的產能
         if (targetAssignee && t.assignee !== targetAssignee) return;
 
-        // ★ 安全修正：加上 ?. 避免舊資料報錯
         if(t.bookings) {
             t.bookings.forEach(b => {
                 if(!occupied[b.date]) occupied[b.date] = 0;
@@ -231,9 +229,7 @@ function createKanbanCard(task) {
         card.addEventListener("dragstart", (e) => {
             draggedTaskId = task.id;
             card.style.opacity = "0.5";
-            
-            // ★ 修正：權限設為 'all' 以兼容泳道移動和 RD 指派
-            e.dataTransfer.effectAllowed = "all"; 
+            e.dataTransfer.effectAllowed = "copy";
             e.dataTransfer.setData("text/plain", task.id);
         });
         
@@ -247,7 +243,6 @@ function createKanbanCard(task) {
         card.style.cursor = "default";
     }
 
-    // 內部元素 pointer-events-none 確保拖曳順暢
     card.innerHTML = `
         <div class="flex justify-between items-start mb-1 pointer-events-none">
             <span class="font-bold text-gray-800 text-sm">${task.product || '未命名'}</span>
@@ -267,7 +262,7 @@ function createKanbanCard(task) {
     return card;
 }
 
-// --- 6. R&D 成員載入與渲染 (使用事件委派) ---
+// --- 6. R&D 成員載入與渲染 ---
 function loadMembers() {
     const q = query(collection(db, "members"), orderBy("name"));
     onSnapshot(q, (snapshot) => {
@@ -280,13 +275,12 @@ function loadMembers() {
 }
 
 function renderRDList() {
-    if (!rdListContainer) return; // 安全檢查
+    if (!rdListContainer) return; 
     rdListContainer.innerHTML = "";
 
     const rdUsage = {};
     allTasksData.forEach(task => {
         if (task.assignee && task.status !== 'done' && task.bookings) {
-            // ★ 安全修正：使用 ?. 避免 bookings 為空時報錯
             const todayBooking = task.bookings?.find(b => b.date === currentDayFilter);
             if (todayBooking) {
                 if (!rdUsage[task.assignee]) rdUsage[task.assignee] = 0;
@@ -393,18 +387,30 @@ if (rdListContainer) {
     });
 }
 
-// 指派
+// 指派 (★ Hard Point 修正版)
 async function assignTaskToRD(taskId, rdName) {
     const task = allTasksData.find(t => t.id === taskId);
     if (!task) return;
-    if (confirm(`指派「${task.product}」給 ${rdName}？\n(排程將從 ${currentDayFilter} 開始計算)`)) {
-        const startDate = currentDayFilter; 
-        const newBookings = allocateBookings(startDate, task.estHours || 1, task.priority, rdName);
+
+    let confirmMsg = `指派「${task.product}」給 ${rdName}？`;
+    let calculationStartDate = currentDayFilter; // 預設：從目前查看的日期開始排
+
+    // ★ 如果是 Hard Point，強制從 submitDate 開始排
+    if (task.isLocked && task.submitDate) {
+        calculationStartDate = task.submitDate;
+        confirmMsg += `\n\n注意：此為 Hard Point 任務，將強制從指定日 (${task.submitDate}) 開始排程。`;
+    } else {
+        confirmMsg += `\n(排程將從 ${currentDayFilter} 開始計算)`;
+    }
+
+    if (confirm(confirmMsg)) {
+        const newBookings = allocateBookings(calculationStartDate, task.estHours || 1, task.priority, rdName);
         
         await updateDoc(doc(db, "tasks", taskId), {
             assignee: rdName,
             bookings: newBookings, 
-            submitDate: newBookings.length > 0 ? newBookings[0].date : task.submitDate,
+            // 如果不是 Hard Point，把 submitDate 更新為排程的第一天；如果是 Hard Point，保持原定日期
+            submitDate: (task.isLocked && task.submitDate) ? task.submitDate : (newBookings.length > 0 ? newBookings[0].date : task.submitDate),
             lastUpdated: new Date().toISOString()
         });
     }
@@ -466,7 +472,9 @@ document.getElementById("save-task-btn").addEventListener("click", async () => {
     const priority = document.getElementById("inp-priority").value;
     const group = document.getElementById("inp-group").value; 
     const assignee = document.getElementById("inp-assignee").value;
+    const isLocked = document.getElementById("inp-isLocked").checked;
 
+    // ★ 修正：如果是 Hard Point，排程必須從 startDate 開始算，否則從 startDate 往後找空檔 (邏輯相同，只是起點意義不同)
     const bookings = allocateBookings(startDate, estHours, priority, assignee);
 
     const taskData = {
@@ -474,7 +482,7 @@ document.getElementById("save-task-btn").addEventListener("click", async () => {
         priority: priority,
         group: group, 
         estHours: estHours,
-        isLocked: document.getElementById("inp-isLocked").checked,
+        isLocked: isLocked,
         bookings: bookings,
         
         bo: document.getElementById("inp-bo").value,
@@ -567,7 +575,6 @@ function renderCalendar() {
         allTasksData.forEach(task => {
             if (currentGroupFilter !== "ALL" && task.group !== currentGroupFilter) return;
 
-            // ★ 安全修正：使用 ?. 避免 bookings 為空時報錯
             if (task.bookings) {
                 const booking = task.bookings.find(b => b.date === dateStr);
                 if (booking) {
@@ -591,7 +598,6 @@ function renderCalendar() {
     }
 }
 
-// 這些按鈕必須在檔案最後，且上面程式碼不能報錯，否則會失效
 document.getElementById("view-kanban-btn").addEventListener("click", () => {
     viewKanban.classList.remove("hidden"); viewKanban.classList.add("flex");
     viewCalendar.classList.add("hidden");
@@ -679,3 +685,72 @@ columns.forEach(colId => {
         }
     });
 });
+
+// --- 11. Excel 匯入功能 ---
+const importBtn = document.getElementById("importBtn");
+const fileInput = document.getElementById("excel-upload");
+
+if (importBtn && fileInput) {
+    importBtn.addEventListener("click", () => fileInput.click());
+
+    fileInput.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+                    raw: false, 
+                    dateNF: 'yyyy-mm-dd' 
+                });
+
+                if (jsonData.length === 0) {
+                    alert("Excel 檔案是空的");
+                    return;
+                }
+
+                let count = 0;
+                for (const row of jsonData) {
+                    const taskData = {
+                        status: "todo",         
+                        priority: "normal",     
+                        group: "ALFS",          
+                        estHours: 1,            
+                        isLocked: false,
+                        
+                        bo: row['BO'] || "",
+                        openDate: row['開立日期'] || new Date().toISOString().split('T')[0],
+                        submitDate: row['提交日期'] || "",
+                        nbo: row['NBO'] || "",
+                        drsp: row['DR/SP單號'] || "",
+                        product: row['品名'] || "匯入任務",
+                        requirement: row['需求'] || "",
+                        t1: row['T1'] || "",
+                        oem: row['OEM'] || "",
+                        note: row['NOTE'] || "",
+                        
+                        createdAt: new Date().toISOString(),
+                        lastUpdated: new Date().toISOString()
+                    };
+                    
+                    await addDoc(collection(db, "tasks"), taskData);
+                    count++;
+                }
+
+                alert(`成功匯入 ${count} 筆任務！`);
+                fileInput.value = ""; 
+
+            } catch (err) {
+                console.error("Excel 解析錯誤:", err);
+                alert("匯入失敗，請確認 Excel 格式是否正確。");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
+}

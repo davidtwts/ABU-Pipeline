@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>團隊看板 (RD/PM)</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -38,7 +39,7 @@
 
     <header class="bg-white shadow px-4 py-3 flex justify-between items-center z-20 shrink-0">
         <div class="flex items-center gap-4">
-            <h1 class="text-xl font-bold text-gray-800 hidden md:block">專案看板v2.0</h1>
+            <h1 class="text-xl font-bold text-gray-800 hidden md:block">專案看板</h1>
             
             <div class="flex items-center bg-gray-100 rounded px-2">
                 <i class="fas fa-filter text-gray-400 mr-2"></i>
@@ -57,7 +58,16 @@
                 <button id="view-calendar-btn" class="px-3 py-1 rounded text-gray-500 hover:text-gray-700 text-xs transition">日曆</button>
             </div>
 
-            <button id="exportBtn" class="pm-only text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 ml-2 hidden"><i class="fas fa-file-csv mr-1"></i>匯出</button>
+            <div class="flex gap-2 ml-2">
+                <input type="file" id="excel-upload" accept=".xlsx, .xls" class="hidden">
+                
+                <button id="importBtn" class="pm-only text-xs bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 hidden">
+                    <i class="fas fa-file-import mr-1"></i>匯入Excel
+                </button>
+                <button id="exportBtn" class="pm-only text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 hidden">
+                    <i class="fas fa-file-csv mr-1"></i>匯出
+                </button>
+            </div>
         </div>
 
         <div class="text-sm flex items-center">
