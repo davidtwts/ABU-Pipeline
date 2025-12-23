@@ -229,7 +229,9 @@ function createKanbanCard(task) {
         card.addEventListener("dragstart", (e) => {
             draggedTaskId = task.id;
             card.style.opacity = "0.5";
-            e.dataTransfer.effectAllowed = "copy";
+            
+            // ★ 關鍵修正：設為 'all'，同時支援「移動泳道」和「指派 RD」
+            e.dataTransfer.effectAllowed = "all"; 
             e.dataTransfer.setData("text/plain", task.id);
         });
         
@@ -262,7 +264,7 @@ function createKanbanCard(task) {
     return card;
 }
 
-// --- 6. R&D 成員載入與渲染 ---
+// --- 6. R&D 成員載入與渲染 (使用事件委派) ---
 function loadMembers() {
     const q = query(collection(db, "members"), orderBy("name"));
     onSnapshot(q, (snapshot) => {
@@ -364,7 +366,7 @@ if (rdListContainer) {
         const card = e.target.closest(".rd-member-card");
         if (card && currentUserRole === 'pm') {
             e.preventDefault(); 
-            e.dataTransfer.dropEffect = "copy";
+            e.dataTransfer.dropEffect = "copy"; // 這裡維持 copy，因為是指派
             card.classList.add("drag-over");
         }
     });
@@ -387,15 +389,14 @@ if (rdListContainer) {
     });
 }
 
-// 指派 (★ Hard Point 修正版)
+// 指派
 async function assignTaskToRD(taskId, rdName) {
     const task = allTasksData.find(t => t.id === taskId);
     if (!task) return;
 
     let confirmMsg = `指派「${task.product}」給 ${rdName}？`;
-    let calculationStartDate = currentDayFilter; // 預設：從目前查看的日期開始排
+    let calculationStartDate = currentDayFilter; 
 
-    // ★ 如果是 Hard Point，強制從 submitDate 開始排
     if (task.isLocked && task.submitDate) {
         calculationStartDate = task.submitDate;
         confirmMsg += `\n\n注意：此為 Hard Point 任務，將強制從指定日 (${task.submitDate}) 開始排程。`;
@@ -409,7 +410,6 @@ async function assignTaskToRD(taskId, rdName) {
         await updateDoc(doc(db, "tasks", taskId), {
             assignee: rdName,
             bookings: newBookings, 
-            // 如果不是 Hard Point，把 submitDate 更新為排程的第一天；如果是 Hard Point，保持原定日期
             submitDate: (task.isLocked && task.submitDate) ? task.submitDate : (newBookings.length > 0 ? newBookings[0].date : task.submitDate),
             lastUpdated: new Date().toISOString()
         });
@@ -474,7 +474,6 @@ document.getElementById("save-task-btn").addEventListener("click", async () => {
     const assignee = document.getElementById("inp-assignee").value;
     const isLocked = document.getElementById("inp-isLocked").checked;
 
-    // ★ 修正：如果是 Hard Point，排程必須從 startDate 開始算，否則從 startDate 往後找空檔 (邏輯相同，只是起點意義不同)
     const bookings = allocateBookings(startDate, estHours, priority, assignee);
 
     const taskData = {
@@ -540,120 +539,7 @@ if (addRdBtn) {
     });
 }
 
-// --- 8. 行事曆 ---
-function renderCalendar() {
-    const grid = document.getElementById("calendar-grid");
-    grid.innerHTML = "";
-    const year = currentCalendarDate.getFullYear();
-    const month = currentCalendarDate.getMonth();
-    document.getElementById("calendar-month-title").textContent = `${year}年 ${month + 1}月`;
-
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-    for (let i = 0; i < firstDay; i++) {
-        const blank = document.createElement("div");
-        blank.className = "bg-gray-50";
-        grid.appendChild(blank);
-    }
-
-    for (let day = 1; day <= daysInMonth; day++) {
-        const cell = document.createElement("div");
-        cell.className = "calendar-cell";
-        const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-        
-        const numDiv = document.createElement("div");
-        numDiv.className = "calendar-date-num";
-        numDiv.textContent = day;
-        numDiv.onclick = () => { 
-            currentDayFilter = dateStr; 
-            document.getElementById("current-date-display").textContent = dateStr;
-            renderRDList(); 
-        };
-        cell.appendChild(numDiv);
-
-        allTasksData.forEach(task => {
-            if (currentGroupFilter !== "ALL" && task.group !== currentGroupFilter) return;
-
-            if (task.bookings) {
-                const booking = task.bookings.find(b => b.date === dateStr);
-                if (booking) {
-                    const taskDiv = document.createElement("div");
-                    taskDiv.className = `calendar-task status-${task.status}`;
-                    
-                    if(task.priority === 'red') {
-                        taskDiv.classList.add('cal-RED');
-                    } else {
-                        taskDiv.classList.add(`cal-${task.group || 'NONE'}`);
-                    }
-
-                    taskDiv.textContent = `${task.product}`;
-                    taskDiv.title = `[${task.group}] ${task.product} (${task.assignee})`;
-                    taskDiv.addEventListener("click", (e) => { e.stopPropagation(); if(currentUserRole === 'pm') openModal(task.status, task); });
-                    cell.appendChild(taskDiv);
-                }
-            }
-        });
-        grid.appendChild(cell);
-    }
-}
-
-document.getElementById("view-kanban-btn").addEventListener("click", () => {
-    viewKanban.classList.remove("hidden"); viewKanban.classList.add("flex");
-    viewCalendar.classList.add("hidden");
-});
-document.getElementById("view-calendar-btn").addEventListener("click", () => {
-    viewKanban.classList.add("hidden"); viewKanban.classList.remove("flex");
-    viewCalendar.classList.remove("hidden");
-    renderCalendar();
-});
-document.getElementById("prev-month-btn").addEventListener("click", () => { currentCalendarDate.setMonth(currentCalendarDate.getMonth()-1); renderCalendar(); });
-document.getElementById("next-month-btn").addEventListener("click", () => { currentCalendarDate.setMonth(currentCalendarDate.getMonth()+1); renderCalendar(); });
-document.getElementById("today-btn").addEventListener("click", () => { currentCalendarDate = new Date(); renderCalendar(); });
-
-// --- 9. 成員編輯視窗邏輯 ---
-const memberModal = document.getElementById("member-modal");
-
-function openMemberModal(member) {
-    memberModal.classList.remove("hidden");
-    document.getElementById("edit-member-id").value = member.id;
-    document.getElementById("edit-member-name").value = member.name;
-    document.getElementById("edit-member-group").value = member.group || "ALFS";
-}
-
-document.getElementById("cancel-member-btn").addEventListener("click", () => {
-    memberModal.classList.add("hidden");
-});
-
-document.getElementById("save-member-btn").addEventListener("click", async () => {
-    const memberId = document.getElementById("edit-member-id").value;
-    const newGroup = document.getElementById("edit-member-group").value;
-
-    try {
-        await updateDoc(doc(db, "members", memberId), {
-            group: newGroup
-        });
-        memberModal.classList.add("hidden");
-    } catch (e) {
-        alert("更新失敗：" + e.message);
-    }
-});
-
-document.getElementById("del-member-btn").addEventListener("click", async () => {
-    const memberId = document.getElementById("edit-member-id").value;
-    const memberName = document.getElementById("edit-member-name").value;
-
-    if (confirm(`警告：確定要刪除成員「${memberName}」嗎？\n\n注意：這不會刪除他已經被指派的任務紀錄，但之後將無法指派新任務給他。`)) {
-        try {
-            await deleteDoc(doc(db, "members", memberId));
-            memberModal.classList.add("hidden");
-        } catch (e) {
-            alert("刪除失敗：" + e.message);
-        }
-    }
-});
-
-// --- 10. 看板欄位拖曳功能 ---
+// --- 10. 看板欄位拖曳功能 (修正為 'move') ---
 const columns = ["todo", "doing", "done"];
 
 columns.forEach(colId => {
@@ -661,7 +547,7 @@ columns.forEach(colId => {
     
     column.addEventListener("dragover", (e) => {
         e.preventDefault(); 
-        e.dataTransfer.dropEffect = "move"; 
+        e.dataTransfer.dropEffect = "move"; // 這裡預期是 move
         column.classList.add("bg-gray-200"); 
     });
 
